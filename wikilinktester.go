@@ -97,14 +97,14 @@ func enqueueLinks(ctx *fetchbot.Context, doc *goquery.Document) {
 
 		if !dup[hostpathOnly] {
 			if u.Host == "github.com" && strings.Contains(u.Path, "/golang/go/wiki") {
-				fmt.Printf("  --> Sending GET for %v\n", hostpathOnly)
+				//fmt.Printf("  --> Sending GET for %v\n", hostpathOnly)
 				if _, err := ctx.Q.SendStringGet(hostpathOnly); err != nil {
 					fmt.Printf("error: enqueue head %s - %s\n", u, err)
 				} else {
 					dup[u.String()] = true
 				}
 			} else {
-				fmt.Printf("  --> Sending HEAD for %v\n", u.String())
+				//fmt.Printf("  --> Sending HEAD for %v\n", u.String())
 				if _, err := ctx.Q.SendStringHead(u.String()); err != nil {
 					fmt.Printf("error: enqueue head %s - %s\n", u, err)
 				} else {
