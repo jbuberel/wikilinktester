@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 
@@ -20,9 +21,18 @@ var (
 )
 
 func main() {
+	lf, err := os.OpenFile("testlogfile", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	if err != nil {
+		log.Fatalf("error opening file: %v", err)
+	}
+	defer lf.Close()
+
+	log.SetOutput(lf)
+	log.Println("This is a test log entry")
 	seed := "http://github.com/golang/go/wiki"
 	// Parse the provided seed
 	u, err := url.Parse(seed)
+	fmt.Printf("Scanning: %v\n", u.String())
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -31,29 +41,30 @@ func main() {
 
 	// Handle all errors the same
 	mux.HandleErrors(fetchbot.HandlerFunc(func(ctx *fetchbot.Context, res *http.Response, err error) {
-		fmt.Printf("[ERR] %s %s - %s\n", ctx.Cmd.Method(), ctx.Cmd.URL(), err)
+		fmt.Printf("[ERR - HandleErrors] %s\n", err)
 	}))
 
 	// Handle GET requests for html responses, to parse the body and enqueue all links as HEAD
 	// requests.
-	mux.Response().Method("GET").ContentType("text/html").Handler(fetchbot.HandlerFunc(
+	mux.Response().Method("GET").Host(u.Host).Path("/golang/go/wiki").ContentType("text/html").Handler(fetchbot.HandlerFunc(
 		func(ctx *fetchbot.Context, res *http.Response, err error) {
-			// Process the body to find the links
+			log.Printf("GET: %v - %v\n", res.Status, ctx.Cmd.URL())
 			doc, err := goquery.NewDocumentFromResponse(res)
 			if err != nil {
-				fmt.Printf("[ERR] %s %s - %s\n", ctx.Cmd.Method(), ctx.Cmd.URL(), err)
+				fmt.Printf("[GET] %s %s - %s\n", res.Status, ctx.Cmd.URL(), err)
 				return
 			}
 			// Enqueue all links as HEAD requests
 			enqueueLinks(ctx, doc)
 		}))
 
-	// Handle HEAD requests for html responses coming from the source host - we don't want
+	// Handle GET requests for html responses coming from the source host - we don't want
 	// to crawl links from other hosts.
-	mux.Response().Method("HEAD").Host(u.Host).ContentType("text/html").Handler(fetchbot.HandlerFunc(
+	mux.Response().ContentType("text/html").Handler(fetchbot.HandlerFunc(
 		func(ctx *fetchbot.Context, res *http.Response, err error) {
-			if _, err := ctx.Q.SendStringGet(ctx.Cmd.URL().String()); err != nil {
-				fmt.Printf("[ERR] %s %s - %s\n", ctx.Cmd.Method(), ctx.Cmd.URL(), err)
+			log.Printf("HEAD: %v -  %v\n", res.Status, ctx.Cmd.URL())
+			if strings.HasPrefix(res.Status, "40") || strings.HasPrefix(res.Status, "50") {
+				fmt.Printf("[ERR] - %v - %v\n", res.Status, ctx.Cmd.URL())
 			}
 		}))
 	h := logHandler(mux)
@@ -85,6 +96,7 @@ func logHandler(wrapped fetchbot.Handler) fetchbot.Handler {
 
 func enqueueLinks(ctx *fetchbot.Context, doc *goquery.Document) {
 	mu.Lock()
+	defer mu.Unlock()
 	doc.Find("a[href]").Each(func(i int, s *goquery.Selection) {
 		val, _ := s.Attr("href")
 		// Resolve address
@@ -93,27 +105,24 @@ func enqueueLinks(ctx *fetchbot.Context, doc *goquery.Document) {
 			fmt.Printf("error: resolve URL %s - %s\n", val, err)
 			return
 		}
-    hostpathOnly := strings.Replace(u.String(),"#" + u.Fragment, "", 1)
+		hostpathOnly := strings.Replace(u.String(), "#"+u.Fragment, "", 1)
 
 		if !dup[hostpathOnly] {
+			dup[hostpathOnly] = true
+
 			if u.Host == "github.com" && strings.Contains(u.Path, "/golang/go/wiki") {
 				//fmt.Printf("  --> Sending GET for %v\n", hostpathOnly)
 				if _, err := ctx.Q.SendStringGet(hostpathOnly); err != nil {
-					fmt.Printf("error: enqueue head %s - %s\n", u, err)
-				} else {
-					dup[u.String()] = true
+					fmt.Printf("error: enqueue get %s - %s\n", u, err)
 				}
-			} else {
+			} else if u.Scheme == "http" || u.Scheme == "https" {
 				//fmt.Printf("  --> Sending HEAD for %v\n", u.String())
 				if _, err := ctx.Q.SendStringHead(u.String()); err != nil {
-					fmt.Printf("error: enqueue head %s - %s\n", u, err)
-				} else {
-					dup[u.String()] = true
+					fmt.Printf("error: enqueue get %s - %s\n", u, err)
 				}
 
 			}
 
 		}
 	})
-	mu.Unlock()
 }
