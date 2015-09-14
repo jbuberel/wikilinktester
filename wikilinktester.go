@@ -110,7 +110,9 @@ func enqueueLinks(ctx *fetchbot.Context, doc *goquery.Document) {
 		if !dup[hostpathOnly] {
 			dup[hostpathOnly] = true
 
-			if u.Host == "github.com" && strings.Contains(u.Path, "/golang/go/wiki") {
+			if strings.Contains(u.String(), "_history") {
+				// skipping _history URL
+			} else if u.Host == "github.com" && strings.Contains(u.Path, "/golang/go/wiki") {
 				//fmt.Printf("  --> Sending GET for %v\n", hostpathOnly)
 				if _, err := ctx.Q.SendStringGet(hostpathOnly); err != nil {
 					fmt.Printf("error: enqueue get %s - %s\n", u, err)
