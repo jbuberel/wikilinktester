@@ -30,13 +30,12 @@ func main() {
 	log.SetOutput(lf)
 	log.Println("This is a test log entry")
 	seed := "http://github.com/golang/go/wiki"
-	// Parse the provided seed
+
 	u, err := url.Parse(seed)
 	fmt.Printf("Scanning: %v\n", u.String())
 	if err != nil {
 		log.Fatal(err)
 	}
-	// Create the muxer
 	mux := fetchbot.NewMux()
 
 	// Handle all errors the same
